@@ -2,12 +2,13 @@ from network import Network
 import tensorflow as tf
 
 class ICNet(Network):
-    def setup(self, is_training, num_classes):
+    def setup(self, is_training, num_classes, evalutaion):
         (self.feed('data')
-             .interp(factor=0.5, name='data_sub2')
+             .interp(s_factor=0.5, name='data_sub2')
              .conv(3, 3, 32, 2, 2, biased=True, padding='SAME', relu=True, name='conv1_1_3x3_s2')
              .conv(3, 3, 32, 1, 1, biased=True, padding='SAME', relu=True, name='conv1_2_3x3')
              .conv(3, 3, 64, 1, 1, biased=True, padding='SAME', relu=True, name='conv1_3_3x3')
+             .zero_padding(paddings=1, name='padding0')
              .max_pool(3, 3, 2, 2, name='pool1_3x3_s2')
              .conv(1, 1, 128, 1, 1, biased=True, relu=False, name='conv2_1_1x1_proj'))
 
@@ -51,7 +52,7 @@ class ICNet(Network):
                    'conv3_1_1x1_increase')
              .add(name='conv3_1')
              .relu(name='conv3_1/relu')
-             .interp(factor=0.5, name='conv3_1_sub4')
+             .interp(s_factor=0.5, name='conv3_1_sub4')
              .conv(1, 1, 64, 1, 1, biased=True, relu=True, name='conv3_2_1x1_reduce')
              .zero_padding(paddings=1, name='padding5')
              .conv(3, 3, 64, 1, 1, biased=True, relu=True, name='conv3_2_3x3')
@@ -169,22 +170,39 @@ class ICNet(Network):
 
         shape = self.layers['conv5_3/relu'].get_shape().as_list()[1:3]
         h, w = shape
-        
-        (self.feed('conv5_3/relu')
-             .avg_pool(h, w, h, w, name='conv5_3_pool1')
-             .resize_bilinear(shape, name='conv5_3_pool1_interp'))
 
-        (self.feed('conv5_3/relu')
-             .avg_pool(h/2, w/2, h/2, w/2, name='conv5_3_pool2')
-             .resize_bilinear(shape, name='conv5_3_pool2_interp'))
+        if self.evaluation: # Change to same configuration as original prototxt
+            (self.feed('conv5_3/relu')
+                .avg_pool(33, 65, 33, 65, name='conv5_3_pool1')
+                .resize_bilinear(shape, name='conv5_3_pool1_interp'))
 
-        (self.feed('conv5_3/relu')
-             .avg_pool(h/3, w/3, h/3, w/3, name='conv5_3_pool3')
-             .resize_bilinear(shape, name='conv5_3_pool3_interp'))
+            (self.feed('conv5_3/relu')
+                .avg_pool(17, 33, 16, 32, name='conv5_3_pool2')
+                .resize_bilinear(shape, name='conv5_3_pool2_interp'))
 
-        (self.feed('conv5_3/relu')
-             .avg_pool(h/4, w/4, h/4, w/4, name='conv5_3_pool6')
-             .resize_bilinear(shape, name='conv5_3_pool6_interp'))
+            (self.feed('conv5_3/relu')
+                .avg_pool(13, 25, 10, 20, name='conv5_3_pool3')
+                .resize_bilinear(shape, name='conv5_3_pool3_interp'))
+
+            (self.feed('conv5_3/relu')
+                .avg_pool(8, 15, 5, 10, name='conv5_3_pool6')
+                .resize_bilinear(shape, name='conv5_3_pool6_interp'))
+        else:       # In inference phase, we support different size of images as input.
+            (self.feed('conv5_3/relu')
+                .avg_pool(h, w, h, w, name='conv5_3_pool1')
+                .resize_bilinear(shape, name='conv5_3_pool1_interp'))
+
+            (self.feed('conv5_3/relu')
+                .avg_pool(h/2, w/2, h/2, w/2, name='conv5_3_pool2')
+                .resize_bilinear(shape, name='conv5_3_pool2_interp'))
+
+            (self.feed('conv5_3/relu')
+                .avg_pool(h/3, w/3, h/3, w/3, name='conv5_3_pool3')
+                .resize_bilinear(shape, name='conv5_3_pool3_interp'))
+
+            (self.feed('conv5_3/relu')
+                .avg_pool(h/6, w/6, h/6, w/6, name='conv5_3_pool6')
+                .resize_bilinear(shape, name='conv5_3_pool6_interp'))
 
         (self.feed('conv5_3/relu',
                    'conv5_3_pool6_interp',
@@ -193,7 +211,7 @@ class ICNet(Network):
                    'conv5_3_pool1_interp')
              .add(name='conv5_3_sum')
              .conv(1, 1, 256, 1, 1, biased=True, relu=True, name='conv5_4_k1')
-             .interp(factor=2.0, name='conv5_4_interp')
+             .interp(z_factor=2.0, name='conv5_4_interp')
              .zero_padding(paddings=2, name='padding17')
              .atrous_conv(3, 3, 128, 2, biased=True, relu=False, name='conv_sub4'))
 
@@ -204,7 +222,7 @@ class ICNet(Network):
                    'conv3_1_sub2_proj')
              .add(name='sub24_sum')
              .relu(name='sub24_sum/relu')
-             .interp(factor=2.0, name='sub24_sum_interp')
+             .interp(z_factor=2.0, name='sub24_sum_interp')
              .zero_padding(paddings=2, name='padding18')
              .atrous_conv(3, 3, 128, 2, biased=True, relu=False, name='conv_sub2'))
 
@@ -218,19 +236,20 @@ class ICNet(Network):
                    'conv3_sub1_proj')
              .add(name='sub12_sum')
              .relu(name='sub12_sum/relu')
-             .interp(factor=2.0, name='sub12_sum_interp')
+             .interp(z_factor=2.0, name='sub12_sum_interp')
              .conv(1, 1, num_classes, 1, 1, biased=True, relu=False, name='conv6_cls'))
 
 class ICNet_BN(Network):
-    def setup(self, is_training, num_classes):
+    def setup(self, is_training, num_classes, evaluation):
         (self.feed('data')
-             .interp(factor=0.5, name='data_sub2')
+             .interp(s_factor=0.5, name='data_sub2')
              .conv(3, 3, 32, 2, 2, biased=False, padding='SAME', relu=False, name='conv1_1_3x3_s2')
              .batch_normalization(relu=True, name='conv1_1_3x3_s2_bn')
              .conv(3, 3, 32, 1, 1, biased=False, padding='SAME', relu=False, name='conv1_2_3x3')
              .batch_normalization(relu=True, name='conv1_2_3x3_bn')
              .conv(3, 3, 64, 1, 1, biased=False, padding='SAME', relu=False, name='conv1_3_3x3')
              .batch_normalization(relu=True, name='conv1_3_3x3_bn')
+             .zero_padding(paddings=1, name='padding0')
              .max_pool(3, 3, 2, 2, name='pool1_3x3_s2')
              .conv(1, 1, 128, 1, 1, biased=False, relu=False, name='conv2_1_1x1_proj')
              .batch_normalization(relu=False, name='conv2_1_1x1_proj_bn'))
@@ -288,7 +307,7 @@ class ICNet_BN(Network):
                    'conv3_1_1x1_increase_bn')
              .add(name='conv3_1')
              .relu(name='conv3_1/relu')
-             .interp(factor=0.5, name='conv3_1_sub4')
+             .interp(s_factor=0.5, name='conv3_1_sub4')
              .conv(1, 1, 64, 1, 1, biased=False, relu=False, name='conv3_2_1x1_reduce')
              .batch_normalization(relu=True, name='conv3_2_1x1_reduce_bn')
              .zero_padding(paddings=1, name='padding5')
@@ -445,7 +464,7 @@ class ICNet_BN(Network):
 
         shape = self.layers['conv5_3/relu'].get_shape().as_list()[1:3]
         h, w = shape
-        
+
         (self.feed('conv5_3/relu')
              .avg_pool(h, w, h, w, name='conv5_3_pool1')
              .resize_bilinear(shape, name='conv5_3_pool1_interp'))
@@ -470,7 +489,7 @@ class ICNet_BN(Network):
              .add(name='conv5_3_sum')
              .conv(1, 1, 256, 1, 1, biased=False, relu=False, name='conv5_4_k1')
              .batch_normalization(relu=True, name='conv5_4_k1_bn')
-             .interp(factor=2.0, name='conv5_4_interp')
+             .interp(z_factor=2.0, name='conv5_4_interp')
              .zero_padding(paddings=2, name='padding17')
              .atrous_conv(3, 3, 128, 2, biased=False, relu=False, name='conv_sub4')
              .batch_normalization(relu=False, name='conv_sub4_bn'))
@@ -483,7 +502,7 @@ class ICNet_BN(Network):
                    'conv3_1_sub2_proj_bn')
              .add(name='sub24_sum')
              .relu(name='sub24_sum/relu')
-             .interp(factor=2.0, name='sub24_sum_interp')
+             .interp(z_factor=2.0, name='sub24_sum_interp')
              .zero_padding(paddings=2, name='padding18')
              .atrous_conv(3, 3, 128, 2, biased=False, relu=False, name='conv_sub2')
              .batch_normalization(relu=False, name='conv_sub2_bn'))
@@ -502,7 +521,7 @@ class ICNet_BN(Network):
                    'conv3_sub1_proj_bn')
              .add(name='sub12_sum')
              .relu(name='sub12_sum/relu')
-             .interp(factor=2.0, name='sub12_sum_interp')
+             .interp(z_factor=2.0, name='sub12_sum_interp')
              .conv(1, 1, num_classes, 1, 1, biased=True, relu=False, name='conv6_cls'))
 
         (self.feed('conv5_4_interp')
